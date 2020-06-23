@@ -153,6 +153,24 @@ exports.msgpack = {
     test.isNumber(msgpack.unpack(msgpack.pack(123456782345245)));
     test.done();
   },
+  'test for 2^63' : function (test) {
+    test.expect(2);
+    test.deepEqual(
+      9223372036854775808n,
+      msgpack.unpack(msgpack.pack(9223372036854775808n))
+    );
+    test.isTypeOf(msgpack.unpack(msgpack.pack(9223372036854775808n)), 'bigint');
+    test.done();
+  },
+  'test for 2^63 negative' : function (test) {
+    test.expect(2);
+    test.deepEqual(
+      -9223372036854775808n,
+      msgpack.unpack(msgpack.pack(-9223372036854775808n))
+    );
+    test.isTypeOf(msgpack.unpack(msgpack.pack(-9223372036854775808n)), 'bigint');
+    test.done();
+  },
   'make sure dates are handled properly' : function (test) {
     test.expect(2);
     var date = new Date();

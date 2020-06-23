@@ -21,6 +21,9 @@ double trunc(double d){ return (d>0) ? floor(d) : ceil(d) ; }
 #endif
 
 
+#define NUMBER_MAX_SAFE_INTEGER 9007199254740991
+#define NUMBER_MIN_SAFE_INTEGER -9007199254740991
+
 static Nan::Persistent<FunctionTemplate> msgpack_unpack_template;
 
 
@@ -121,6 +124,25 @@ v8_to_msgpack(Local<Value> v8obj, msgpack_object *mo, msgpack_zone *mz, size_t d
             mo->type = MSGPACK_OBJECT_NEGATIVE_INTEGER;
             mo->via.i64 = static_cast<int64_t>(d);
         }
+    } else if (v8obj->IsBigInt()) {
+        Local<BigInt> bigint = v8obj.As<BigInt>();
+        bool lossless_as_uint64 = false;
+        uint64_t as_uint64 = bigint->Uint64Value(&lossless_as_uint64);
+        if (lossless_as_uint64) {
+            mo->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            mo->via.u64 = as_uint64;
+        }
+        else {
+            bool lossless_as_int64 = false;
+            int64_t as_int64 = bigint->Int64Value(&lossless_as_int64);
+            // TODO: handle the situation (!lossless_as_uint64 && !lossless_as_uint64) == true
+            if (as_int64 > 0) {
+                mo->type = MSGPACK_OBJECT_POSITIVE_INTEGER;
+            } else {
+                mo->type = MSGPACK_OBJECT_NEGATIVE_INTEGER;
+            }
+            mo->via.i64 = as_int64;
+        }
     } else if (v8obj->IsString()) {
         mo->type = MSGPACK_OBJECT_STR;
         mo->via.str.size = static_cast<uint32_t>(Nan::DecodeBytes(v8obj, Nan::Encoding::UTF8));
@@ -202,14 +224,17 @@ msgpack_to_v8(msgpack_object *mo) {
             Nan::False();
 
     case MSGPACK_OBJECT_POSITIVE_INTEGER:
-        // As per Issue #42, we need to use the base Number
-        // class as opposed to the subclass Integer, since
-        // only the former takes 64-bit inputs. Using the
-        // Integer subclass will truncate 64-bit values.
+        if (mo->via.u64 > NUMBER_MAX_SAFE_INTEGER) {
+            // return Nan::New<v8::BigInt>(mo->via.u64);
+            return v8::BigInt::NewFromUnsigned(v8::Isolate::GetCurrent(), mo->via.u64);
+        }
         return Nan::New<Number>(static_cast<double>(mo->via.u64));
 
     case MSGPACK_OBJECT_NEGATIVE_INTEGER:
-        // See comment for MSGPACK_OBJECT_POSITIVE_INTEGER
+        if (mo->via.i64 < NUMBER_MIN_SAFE_INTEGER) {
+            // return Nan::New<v8::BigInt>(mo->via.i64);
+            return v8::BigInt::New(v8::Isolate::GetCurrent(), mo->via.i64);
+        }
         return Nan::New<Number>(static_cast<double>(mo->via.i64));
 
     case MSGPACK_OBJECT_FLOAT:
